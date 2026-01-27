@@ -4,6 +4,7 @@ public class IntakeConstants {
     
     //IDs
     public static final int INTAKE_MOTOR_ID = 10; 
+    public static final int ROLLER_MOTOR_ID = 11;
 
     //Physical Constants
     public static final double GEAR_RATIO = 3.0; 

@@ -23,6 +23,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 public class IntakeSubsystem extends SubsystemBase {
 
     private final SparkMax intakeMotor;
+    private final SparkMax rollerMotor;
     private final RelativeEncoder encoder;
     private final SparkClosedLoopController pidController;
 
@@ -33,11 +34,17 @@ public class IntakeSubsystem extends SubsystemBase {
     
     public IntakeSubsystem() {
         intakeMotor = new SparkMax(IntakeConstants.INTAKE_MOTOR_ID, MotorType.kBrushless);
+        rollerMotor = new SparkMax(IntakeConstants.ROLLER_MOTOR_ID, MotorType.kBrushless);
 
         SparkMaxConfig config = new SparkMaxConfig();
         config.idleMode(IdleMode.kBrake)
               .smartCurrentLimit(30)
               .inverted(false);
+
+        SparkMaxConfig rollerMotorConfig= new SparkMaxConfig();
+        rollerMotorConfig.idleMode(IdleMode.kCoast)
+        .smartCurrentLimit(20)
+        .inverted(false);
         
         double positionConversionFactor = 360.0 / IntakeConstants.GEAR_RATIO;
         config.encoder
@@ -55,6 +62,7 @@ public class IntakeSubsystem extends SubsystemBase {
               .reverseSoftLimitEnabled(true);
 
         intakeMotor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+        rollerMotor.configure(rollerMotorConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
         encoder = intakeMotor.getEncoder();
         pidController = intakeMotor.getClosedLoopController();
@@ -79,6 +87,14 @@ public class IntakeSubsystem extends SubsystemBase {
         }
     }
 
+    public void setRollerSpeed(double speed){
+        rollerMotor.set(speed);
+    }
+
+    public double getRollerSpeed(){
+        return rollerMotor.get();
+    }
+
     public void setSpeed(double speed) {
         manualMode = true;
         intakeMotor.set(speed);
@@ -88,6 +104,10 @@ public class IntakeSubsystem extends SubsystemBase {
     public void stop() {
         intakeMotor.stopMotor();
         targetPosition = encoder.getPosition();
+    }
+
+    public void stopRoller(){
+        rollerMotor.stopMotor();
     }
     
     /**
@@ -161,6 +181,7 @@ public class IntakeSubsystem extends SubsystemBase {
         SmartDashboard.putBoolean("Intake/At Target", atTarget());
         SmartDashboard.putNumber("Intake/Motor Current", getMotorCurrent());
         SmartDashboard.putBoolean("Intake/Manual Mode", manualMode);
+        SmartDashboard.putNumber("Intake/Roller Speed", getRollerSpeed());
         
         boolean highCurrent = getMotorCurrent() > 25.0;
         SmartDashboard.putBoolean("Intake/High Current Warning", highCurrent);
