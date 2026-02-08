@@ -25,7 +25,7 @@ public class Robot extends TimedRobot {
         .withTimestampReplay()
         .withJoystickReplay();
 
-    private final boolean kUseLimelight = true;
+    private final boolean kUseLimelight = false;
 
 
     public Robot() {
@@ -87,6 +87,8 @@ public class Robot extends TimedRobot {
         if (m_autonomousCommand != null) {
             CommandScheduler.getInstance().cancel(m_autonomousCommand);
         }
+
+        m_robotContainer.setInitialPoseForAlliance();
     }
 
     @Override
