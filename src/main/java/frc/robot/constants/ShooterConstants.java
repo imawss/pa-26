@@ -26,6 +26,7 @@ public final class ShooterConstants {
     // Mechanism properties
     public static final double GEAR_RATIO = 1; 
     public static final double WHEEL_DIAMETER_METERS = Units.inchesToMeters(4.0);
+    public static final double WHEEL_RADIUS_METERS = 0.05;
 
     public static final double kP = 0.1;
     public static final double kI = 0.0;

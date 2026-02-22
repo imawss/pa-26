@@ -14,66 +14,106 @@ import com.pathplanner.lib.commands.FollowPathCommand;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
-import frc.robot.commands.intake.ExtendIntakeCommand;
-import frc.robot.commands.intake.RetractIntakeCommand;
+import frc.robot.commands.CompleteShootSequence;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.drivetrain.CommandSwerveDrivetrain;
+import frc.robot.subsystems.feeder.FeederSubsystem;
+import frc.robot.subsystems.hooper.HopperSubsystem;
 import frc.robot.subsystems.intake.IntakeSubsystem;
+import frc.robot.subsystems.shooter.ShooterSubsystem;
+import frc.robot.util.FuelSim;
 
 public class RobotContainer {
-    private double MaxSpeed = 0.5 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // kSpeedAt12Volts desired top speed
-    private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond); // 3/4 of a rotation per second max angular velocity
 
-    /* Setting up bindings for necessary control of the swerve drive platform */
+    private double MaxSpeed = 0.5 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
+    private double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
+
     private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
-            .withDeadband(MaxSpeed * 0.1).withRotationalDeadband(MaxAngularRate * 0.1) // Add a 10% deadband
-            .withDriveRequestType(DriveRequestType.OpenLoopVoltage); // Use open-loop control for drive motors
+            .withDeadband(MaxSpeed * 0.1).withRotationalDeadband(MaxAngularRate * 0.1)
+            .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
     private final SwerveRequest.SwerveDriveBrake brake = new SwerveRequest.SwerveDriveBrake();
     private final SwerveRequest.PointWheelsAt point = new SwerveRequest.PointWheelsAt();
-    private final SwerveRequest.RobotCentric forwardStraight = new SwerveRequest.RobotCentric()
-            .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
     private final Telemetry logger = new Telemetry(MaxSpeed);
 
     private final CommandXboxController joystick = new CommandXboxController(0);
 
     public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
+    public final IntakeSubsystem intake     = new IntakeSubsystem();
+    public final ShooterSubsystem shooter   = new ShooterSubsystem();
+    public final HopperSubsystem hopper     = new HopperSubsystem();
+    public final FeederSubsystem feeder     = new FeederSubsystem();
 
-    public final IntakeSubsystem intake = new IntakeSubsystem();
+    public final FuelSim fuelSim;
 
-    /* Path follower */
     private final SendableChooser<Command> autoChooser;
 
     public RobotContainer() {
+        fuelSim = RobotBase.isSimulation() ? configureFuelSim() : null;
+
         autoChooser = AutoBuilder.buildAutoChooser("Tests");
         SmartDashboard.putData("Auto Mode", autoChooser);
 
         configureBindings();
 
-        // Warmup PathPlanner to avoid Java pauses
         FollowPathCommand.warmupCommand().schedule();
     }
 
+    private FuelSim configureFuelSim() {
+        FuelSim sim = new FuelSim("FuelSim");
+
+        sim.registerRobot(
+            0.87,   // robot width  (left side to right side)
+            0.87,   // robot length (front bumper to back bumper)
+            0.20,   // bumper height (floor to top of bumpers)
+            () -> drivetrain.getState().Pose,    
+            () -> drivetrain.getState().Speeds   
+        );
+
+        sim.registerIntake(
+            -0.43,              
+             0.43,             
+            -0.50,            
+            -0.43,              
+            intake::isExtended,
+            null                
+        );
+
+        // (Optional) Enable air resistance so long shots arc more realistically
+        // sim.enableAirResistance();
+
+         sim.setSubticks(20); // default is 5
+
+        SmartDashboard.putData("FuelSim/Reset Fuel",
+            Commands.runOnce(() -> {
+                sim.clearFuel();
+                sim.spawnStartingFuel();
+            }).ignoringDisable(true).withName("Reset Fuel")
+        );
+
+        sim.start();
+        System.out.println("[FuelSim] Initialized. Balls spawned on field.");
+        return sim;
+    }
+
     private void configureBindings() {
-        // Note that X is defined as forward according to WPILib convention,
-        // and Y is defined as to the left according to WPILib convention.
+
         drivetrain.setDefaultCommand(
-            // Drivetrain will execute this command periodically
             drivetrain.applyRequest(() ->
-                drive.withVelocityX(-joystick.getLeftY() * MaxSpeed) // Drive forward with negative Y (forward)
-                    .withVelocityY(-joystick.getLeftX() * MaxSpeed) // Drive left with negative X (left)
-                    .withRotationalRate(-joystick.getRightX() * MaxAngularRate) // Drive counterclockwise with negative X (left)
+                drive.withVelocityX(-joystick.getLeftY() * MaxSpeed)
+                     .withVelocityY(-joystick.getLeftX() * MaxSpeed)
+                     .withRotationalRate(-joystick.getRightX() * MaxAngularRate)
             )
         );
 
-        // Idle while the robot is disabled. This ensures the configured
-        // neutral mode is applied to the drive motors while disabled.
         final var idle = new SwerveRequest.Idle();
         RobotModeTriggers.disabled().whileTrue(
             drivetrain.applyRequest(() -> idle).ignoringDisable(true)
@@ -84,18 +124,32 @@ public class RobotContainer {
             point.withModuleDirection(new Rotation2d(-joystick.getLeftY(), -joystick.getLeftX()))
         ));
 
-        //joystick.povUp().whileTrue(new ExtendIntake(intake));
-        //joystick.povDown().whileTrue(new RetractIntake(intake));
-
-        // Run SysId routines when holding back/start and X/Y.
-        // Note that each routine should be run exactly once in a single log.
         joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
         joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
         joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
         joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
 
-        // Reset the field-centric heading on left bumper press.
         joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
+
+        SmartDashboard.putData("Test Shoot 2m",
+            new CompleteShootSequence(shooter, hopper, feeder, 2.0, fuelSim));
+        SmartDashboard.putData("Test Shoot 3m",
+            new CompleteShootSequence(shooter, hopper, feeder, 3.0, fuelSim));
+        SmartDashboard.putData("Test Shoot 4m",
+            new CompleteShootSequence(shooter, hopper, feeder, 4.0, fuelSim));
+
+        SmartDashboard.putData("Shooter Spin 3500 RPM",
+            Commands.runOnce(() -> shooter.setVelocityRPM(3500), shooter));
+        SmartDashboard.putData("Shooter Stop",
+            Commands.runOnce(shooter::stop, shooter));
+
+        SmartDashboard.putData("Burst Shoot 3x",
+    Commands.sequence(
+        new CompleteShootSequence(shooter, hopper, feeder, 4.0, fuelSim),
+        new CompleteShootSequence(shooter, hopper, feeder, 4.0, fuelSim),
+        new CompleteShootSequence(shooter, hopper, feeder, 4.0, fuelSim)
+    )
+);
 
         drivetrain.registerTelemetry(logger::telemeterize);
     }
@@ -106,16 +160,15 @@ public class RobotContainer {
         Pose2d startPose;
         if (alliance == edu.wpi.first.wpilibj.DriverStation.Alliance.Blue) {
             startPose = new Pose2d(1, 1, Rotation2d.kZero);
-            System.out.println("Blue Alliance - Pose" + startPose);
+            System.out.println("Blue Alliance - Pose: " + startPose);
         } else {
             startPose = new Pose2d(14, 1, Rotation2d.fromDegrees(180));
-            System.out.println("Red Alliance - Pose:" + startPose);
+            System.out.println("Red Alliance - Pose: " + startPose);
         }
         drivetrain.resetPose(startPose);
     }
 
     public Command getAutonomousCommand() {
-        /* Run the path selected from the auto chooser */
         return autoChooser.getSelected();
     }
 }
