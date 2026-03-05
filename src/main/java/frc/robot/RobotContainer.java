@@ -1,7 +1,3 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
-
 package frc.robot;
 
 import static edu.wpi.first.units.Units.*;
@@ -23,6 +19,7 @@ import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.RobotModeTriggers;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 import frc.robot.commands.CompleteShootSequence;
+import frc.robot.commands.AimAndSpinUpCommand;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.drivetrain.CommandSwerveDrivetrain;
 import frc.robot.subsystems.feeder.FeederSubsystem;
@@ -56,6 +53,9 @@ public class RobotContainer {
 
     private final SendableChooser<Command> autoChooser;
 
+    private AimAndSpinUpCommand hubAimTest;
+    private AimAndSpinUpCommand hubAimDrive;
+
     public RobotContainer() {
         fuelSim = RobotBase.isSimulation() ? configureFuelSim() : null;
 
@@ -71,13 +71,13 @@ public class RobotContainer {
         FuelSim sim = new FuelSim("FuelSim");
 
         sim.registerRobot(
-                0.87, // robot width (left side to right side)
-                0.87, // robot length (front bumper to back bumper)
-                0.20, // bumper height (floor to top of bumpers)
+                0.87,
+                0.87,
+                0.20,
                 () -> drivetrain.getState().Pose,
                 () -> drivetrain.getState().Speeds);
 
-        sim.setSubticks(20); // default is 5
+        sim.setSubticks(20);
 
         SmartDashboard.putData("FuelSim/Reset Fuel",
                 Commands.runOnce(() -> {
@@ -91,6 +91,23 @@ public class RobotContainer {
     }
 
     private void configureBindings() {
+
+        // hubAimTest and hubAimDrive are now identical — both allow driving
+        // while the heading is locked onto the hub.
+        // hubAimTest is triggered from SmartDashboard (no controller needed in sim).
+        // hubAimDrive is triggered from the right bumper during a real match.
+        hubAimTest = new AimAndSpinUpCommand(
+                drivetrain, shooter, hopper, feeder, fuelSim,
+                () -> joystick.getLeftY(),
+                () -> joystick.getLeftX(),
+                MaxSpeed, MaxAngularRate
+        );
+        hubAimDrive = new AimAndSpinUpCommand(
+                drivetrain, shooter, hopper, feeder, fuelSim,
+                () -> joystick.getLeftY(),
+                () -> joystick.getLeftX(),
+                MaxSpeed, MaxAngularRate
+        );
 
         drivetrain.setDefaultCommand(
                 drivetrain.applyRequest(() -> drive.withVelocityX(-joystick.getLeftY() * MaxSpeed)
@@ -112,6 +129,53 @@ public class RobotContainer {
 
         joystick.leftBumper().onTrue(drivetrain.runOnce(drivetrain::seedFieldCentric));
 
+        // ── Auto-aim shoot (hold right bumper) ────────────────────────────────
+        joystick.rightBumper().whileTrue(hubAimDrive);
+
+        // ── No-joystick test button (SmartDashboard / simulation) ─────────────
+        // FIX: putData(name, command) registers the command as a Sendable but
+        // clicking it does NOT properly interrupt the default drive command —
+        // the scheduler silently drops it.
+        //
+        // Instead, wrap schedule()/cancel() in a Commands.runOnce() with NO
+        // subsystem requirements. The wrapper requires nothing itself, so it
+        // runs freely and then calls hubAimTest.schedule() / .cancel(), which
+        // correctly interrupts the default drive command at that point.
+        SmartDashboard.putData("Test HubAim (stationary)",
+                Commands.runOnce(hubAimTest::schedule)
+                        .ignoringDisable(true)
+                        .withName("Test HubAim (stationary)"));
+        // ── Double-click confirmation to cancel ──────────────────────────────
+        // First click arms a 2-second window and shows a warning on SmartDashboard.
+        // Second click ("Confirm Cancel HubAim") within that window actually cancels.
+        // If the window expires without a second click, it disarms automatically.
+        // This prevents accidental cancellation during a match.
+        SmartDashboard.putData("Cancel HubAim Test",
+                Commands.sequence(
+                        Commands.runOnce(() -> {
+                            SmartDashboard.putBoolean("AimAndSpinUp/CancelArmed", true);
+                            System.out.println("[AimAndSpinUp] Cancel ARMED — press 'Confirm Cancel HubAim' within 2s.");
+                        }),
+                        Commands.waitSeconds(2.0),
+                        Commands.runOnce(() -> {
+                            SmartDashboard.putBoolean("AimAndSpinUp/CancelArmed", false);
+                            System.out.println("[AimAndSpinUp] Cancel disarmed — 2s timeout expired.");
+                        })
+                ).ignoringDisable(true).withName("Cancel HubAim Test"));
+
+        // Second button — only does anything if the first was pressed within the last 2s.
+        SmartDashboard.putData("Confirm Cancel HubAim",
+                Commands.runOnce(() -> {
+                    if (SmartDashboard.getBoolean("AimAndSpinUp/CancelArmed", false)) {
+                        hubAimTest.cancel();
+                        SmartDashboard.putBoolean("AimAndSpinUp/CancelArmed", false);
+                        System.out.println("[AimAndSpinUp] Cancel CONFIRMED — command stopped.");
+                    } else {
+                        System.out.println("[AimAndSpinUp] Not armed — press 'Cancel HubAim Test' first.");
+                    }
+                }).ignoringDisable(true).withName("Confirm Cancel HubAim"));
+
+        // ── Existing test buttons ─────────────────────────────────────────────
         SmartDashboard.putData("Test Shoot 2m",
                 new CompleteShootSequence(shooter, hopper, feeder, 2.0, fuelSim));
         SmartDashboard.putData("Test Shoot 3m",
