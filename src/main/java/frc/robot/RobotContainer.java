@@ -11,6 +11,10 @@ import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.FollowPathCommand;
 
 import edu.wpi.first.math.controller.PIDController;
+
+import edu.wpi.first.math.geometry.Pose2d;
+
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
@@ -26,7 +30,11 @@ import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 import frc.robot.commands.AutoShootCommand;
 import frc.robot.commands.ContinuousAimCommand;
 import frc.robot.commands.ShootCommand;
+import frc.robot.commands.AutoAim;
+import frc.robot.commands.intake.ExtendIntakeCommand;
+import frc.robot.commands.intake.RetractIntakeCommand;
 import frc.robot.generated.TunerConstants;
+import frc.robot.subsystems.Limelight;
 import frc.robot.subsystems.drivetrain.CommandSwerveDrivetrain;
 import frc.robot.subsystems.feeder.FeederSubsystem;
 import frc.robot.subsystems.hooper.HopperSubsystem;
@@ -55,6 +63,10 @@ public class RobotContainer {
     public final ShooterSubsystem shooter = new ShooterSubsystem();
     public final HopperSubsystem hopper = new HopperSubsystem();
     public final FeederSubsystem feeder = new FeederSubsystem();
+    
+    private final Limelight limelight = new Limelight();
+
+    private final Pigeon2 pigeon2 = new Pigeon2(12);
 
     private final SendableChooser<Command> autoChooser;
 
@@ -136,6 +148,8 @@ public class RobotContainer {
 
         drivetrain.registerTelemetry(logger::telemeterize);
         SmartDashboard.putData("Autonomous/Auto Chooser", autoChooser);
+
+        joystick.back().and(joystick.rightBumper()).whileTrue(new AutoAim(drivetrain, limelight));
     }
     
     public Command getAutonomousCommand() {
