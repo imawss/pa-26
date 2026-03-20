@@ -12,6 +12,7 @@ import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.SparkClosedLoopController;
 import frc.robot.constants.IntakeConstants;
 
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
@@ -23,8 +24,14 @@ public class IntakeSubsystem extends SubsystemBase {
 
     private double targetPosition = IntakeConstants.INTAKE_RETRACTED_DEGREES;
     private boolean manualMode = false;
-
     private boolean holdingPosition = false;
+
+    private int atTargetCount = 0;
+    private int driftedCount  = 0;
+    private static final int DEBOUNCE_LOOPS = 3;
+
+    private int stallLoopCount = 0;
+    private static final int STALL_LOOP_THRESHOLD = 50; 
 
     public IntakeSubsystem() {
         intakeMotor = new SparkMax(IntakeConstants.INTAKE_MOTOR_ID, MotorType.kBrushless);
@@ -44,9 +51,9 @@ public class IntakeSubsystem extends SubsystemBase {
               .positionWrappingEnabled(false);
 
         config.softLimit
-              .forwardSoftLimit(IntakeConstants.INTAKE_EXTENDED_DEGREES + 10)
+              .forwardSoftLimit(IntakeConstants.INTAKE_EXTENDED_DEGREES - 5)
               .forwardSoftLimitEnabled(true)
-              .reverseSoftLimit(IntakeConstants.INTAKE_RETRACTED_DEGREES - 10)
+              .reverseSoftLimit(IntakeConstants.INTAKE_RETRACTED_DEGREES + 5)
               .reverseSoftLimitEnabled(true);
 
         config.signals
@@ -72,7 +79,8 @@ public class IntakeSubsystem extends SubsystemBase {
     }
 
     public void toggle() {
-        if (isRetracted()) {
+        if (Math.abs(targetPosition - IntakeConstants.INTAKE_RETRACTED_DEGREES)
+                < IntakeConstants.POSITION_TOLERANCE) {
             extend();
         } else {
             retract();
@@ -82,23 +90,37 @@ public class IntakeSubsystem extends SubsystemBase {
     public void setSpeed(double speed) {
         manualMode = true;
         holdingPosition = false;
-        intakeMotor.set(speed);
+        stallLoopCount = 0;
+        intakeMotor.set(MathUtil.clamp(speed, -1.0, 1.0));
         targetPosition = encoder.getPosition();
     }
 
     public void stop() {
-        intakeMotor.stopMotor();
         targetPosition = encoder.getPosition();
-        holdingPosition = false;
         manualMode = false;
+        holdingPosition = false;
+        stallLoopCount = 0;
+        atTargetCount  = 0;
+        driftedCount   = 0;
+        pidController.setSetpoint(targetPosition, ControlType.kPosition, ClosedLoopSlot.kSlot0);
     }
 
     public void calibrate() {
+        if (!isRetracted() && !manualMode) {
+            System.out.println("[IntakeSubsystem] WARNING: calibrate() rejected — intake is not retracted. " +
+                               "Retract fully before calibrating.");
+            return;
+        }
+        intakeMotor.stopMotor();
         encoder.setPosition(IntakeConstants.INTAKE_RETRACTED_DEGREES);
-        targetPosition = IntakeConstants.INTAKE_RETRACTED_DEGREES;
-        manualMode = false;
-        holdingPosition = false;
-        System.out.println("Intake encoder calibrated to " + IntakeConstants.INTAKE_RETRACTED_DEGREES + " degrees");
+        targetPosition    = IntakeConstants.INTAKE_RETRACTED_DEGREES;
+        manualMode        = false;
+        holdingPosition   = true; 
+        stallLoopCount    = 0;
+        atTargetCount     = 0;
+        driftedCount      = 0;
+        System.out.println("[IntakeSubsystem] Encoder calibrated to "
+                           + IntakeConstants.INTAKE_RETRACTED_DEGREES + " degrees");
     }
 
     public boolean isExtended() {
@@ -114,58 +136,89 @@ public class IntakeSubsystem extends SubsystemBase {
     public boolean atTarget() {
         boolean positionOk = Math.abs(encoder.getPosition() - targetPosition)
                              < IntakeConstants.POSITION_TOLERANCE;
-        boolean velocityOk = Math.abs(getVelocity()) < 5.0; // deg/s
+        boolean velocityOk = Math.abs(getVelocity()) < IntakeConstants.SETTLED_VELOCITY_THRESHOLD;
         return positionOk && velocityOk;
     }
 
-    public double getPosition()      { return encoder.getPosition(); }
-    public double getVelocity()      { return encoder.getVelocity(); }
-    public double getTargetPosition(){ return targetPosition; }
-    public double getMotorCurrent()  { return intakeMotor.getOutputCurrent(); }
-    public boolean isManualMode()    { return manualMode; }
+    public double getPosition()       { return encoder.getPosition(); }
+    public double getVelocity()       { return encoder.getVelocity(); }
+    public double getTargetPosition() { return targetPosition; }
+    public double getMotorCurrent()   { return intakeMotor.getOutputCurrent(); }
+    public boolean isManualMode()     { return manualMode; }
 
     @Deprecated
-    public void resetEncoder() { calibrate(); }
+    public void resetEncoder() {
+        throw new UnsupportedOperationException(
+            "resetEncoder() is removed. Call calibrate() instead.");
+    }
 
     private void setTargetPosition(double positionDeg) {
         holdingPosition = false;
-        manualMode = false;
-        targetPosition = positionDeg;
+        manualMode      = false;
+        stallLoopCount  = 0;
+        atTargetCount   = 0;
+        driftedCount    = 0;
+        targetPosition  = positionDeg;
         pidController.setSetpoint(targetPosition, ControlType.kPosition, ClosedLoopSlot.kSlot0);
     }
 
     @Override
     public void periodic() {
-        // Reached target → stop motor, brake mode holds — eliminates oscillation
-        if (!manualMode && !holdingPosition && atTarget()) {
-            intakeMotor.stopMotor();
-            holdingPosition = true;
-        }
-
-        // Drifted out of tolerance → re-engage PID to correct
-        if (!manualMode && holdingPosition && !atTarget()) {
-            holdingPosition = false;
-            pidController.setSetpoint(targetPosition, ControlType.kPosition, ClosedLoopSlot.kSlot0);
-        }
-
-        SmartDashboard.putNumber("Intake/Position (deg)", getPosition());
-        SmartDashboard.putNumber("Intake/Target Position (deg)", targetPosition);
-        SmartDashboard.putNumber("Intake/Velocity (deg/s)", getVelocity());
-        SmartDashboard.putNumber("Intake/Position Error", targetPosition - getPosition());
-        SmartDashboard.putBoolean("Intake/Is Extended", isExtended());
-        SmartDashboard.putBoolean("Intake/Is Retracted", isRetracted());
-        SmartDashboard.putBoolean("Intake/At Target", atTarget());
-        SmartDashboard.putBoolean("Intake/Holding Position", holdingPosition);
-        SmartDashboard.putNumber("Intake/Motor Current", getMotorCurrent());
-        SmartDashboard.putNumber("Intake/Applied Output", intakeMotor.getAppliedOutput());
-        SmartDashboard.putNumber("Intake/Bus Voltage", intakeMotor.getBusVoltage());
-        SmartDashboard.putBoolean("Intake/Manual Mode", manualMode);
-        SmartDashboard.putBoolean("Intake/High Current Warning", getMotorCurrent() > 25.0);
-
         boolean isStalled = !manualMode && !holdingPosition &&
-                            Math.abs(getVelocity()) < 0.5 && !atTarget() &&
+                            Math.abs(getVelocity()) < IntakeConstants.STALL_VELOCITY_THRESHOLD &&
                             Math.abs(targetPosition - getPosition()) > IntakeConstants.POSITION_TOLERANCE;
-        SmartDashboard.putBoolean("Intake/Stalled", isStalled);
+
+        if (isStalled) {
+            stallLoopCount++;
+            if (stallLoopCount >= STALL_LOOP_THRESHOLD) {
+                intakeMotor.stopMotor();
+                holdingPosition = true; 
+                System.out.println("[IntakeSubsystem] STALL DETECTED — motor stopped to prevent damage.");
+            }
+        } else {
+            stallLoopCount = 0;
+        }
+
+        if (!manualMode && !holdingPosition && atTarget()) {
+            atTargetCount++;
+            if (atTargetCount >= DEBOUNCE_LOOPS) {
+                intakeMotor.stopMotor();
+                holdingPosition = true;
+                atTargetCount   = 0;
+                driftedCount    = 0;
+            }
+        } else {
+            atTargetCount = 0;
+        }
+
+        if (!manualMode && holdingPosition && !atTarget() && !isStalled) {
+            driftedCount++;
+            if (driftedCount >= DEBOUNCE_LOOPS) {
+                holdingPosition = false;
+                stallLoopCount  = 0;
+                driftedCount    = 0;
+                atTargetCount   = 0;
+                pidController.setSetpoint(targetPosition, ControlType.kPosition, ClosedLoopSlot.kSlot0);
+            }
+        } else if (!holdingPosition) {
+            driftedCount = 0;
+        }
+
+        SmartDashboard.putNumber("Intake/Position (deg)",       getPosition());
+        SmartDashboard.putNumber("Intake/Target Position (deg)", targetPosition);
+        SmartDashboard.putNumber("Intake/Velocity (deg/s)",     getVelocity());
+        SmartDashboard.putNumber("Intake/Position Error",       targetPosition - getPosition());
+        SmartDashboard.putBoolean("Intake/Is Extended",         isExtended());
+        SmartDashboard.putBoolean("Intake/Is Retracted",        isRetracted());
+        SmartDashboard.putBoolean("Intake/At Target",           atTarget());
+        SmartDashboard.putBoolean("Intake/Holding Position",    holdingPosition);
+        SmartDashboard.putNumber("Intake/Motor Current",        getMotorCurrent());
+        SmartDashboard.putNumber("Intake/Applied Output",       intakeMotor.getAppliedOutput());
+        SmartDashboard.putNumber("Intake/Bus Voltage",          intakeMotor.getBusVoltage());
+        SmartDashboard.putBoolean("Intake/Manual Mode",         manualMode);
+        SmartDashboard.putBoolean("Intake/High Current Warning",getMotorCurrent() > 25.0);
+        SmartDashboard.putBoolean("Intake/Stalled",             isStalled);
+        SmartDashboard.putNumber("Intake/Stall Loop Count",     stallLoopCount);
 
         boolean outOfBounds = getPosition() < (IntakeConstants.INTAKE_RETRACTED_DEGREES - 15) ||
                               getPosition() > (IntakeConstants.INTAKE_EXTENDED_DEGREES + 15);
