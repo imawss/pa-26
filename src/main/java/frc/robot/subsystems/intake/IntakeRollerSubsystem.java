@@ -15,7 +15,7 @@ public class IntakeRollerSubsystem extends SubsystemBase {
     
     private static final int ROLLER_MOTOR_ID = 37;  
 
-    private static final double INTAKE_SPEED = 0.95;  
+    private static final double INTAKE_SPEED = 0.9;  
     private static final double EJECT_SPEED = -0.6;   
     
     private double currentSpeed = 0.0;

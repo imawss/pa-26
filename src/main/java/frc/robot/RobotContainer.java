@@ -9,6 +9,7 @@ import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import com.pathplanner.lib.commands.FollowPathCommand;
 
+import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.shuffleboard.Shuffleboard;
 import edu.wpi.first.wpilibj.shuffleboard.ShuffleboardTab;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
@@ -34,86 +35,88 @@ import frc.robot.subsystems.shooter.ShooterSubsystem;
 
 public class RobotContainer {
 
-    private final double MaxSpeed       = 0.75 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
-    private final double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
+        private final double MaxSpeed = 0.75 * TunerConstants.kSpeedAt12Volts.in(MetersPerSecond);
+        private final double MaxAngularRate = RotationsPerSecond.of(0.75).in(RadiansPerSecond);
 
-    private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
-            .withDeadband(MaxSpeed * 0.1)
-            .withRotationalDeadband(MaxAngularRate * 0.1)
-            .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+        private final SwerveRequest.FieldCentric drive = new SwerveRequest.FieldCentric()
+                        .withDeadband(MaxSpeed * 0.1)
+                        .withRotationalDeadband(MaxAngularRate * 0.1)
+                        .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
-    private final Telemetry logger = new Telemetry(MaxSpeed);
+        private final Telemetry logger = new Telemetry(MaxSpeed);
 
-    private final CommandXboxController joystick = new CommandXboxController(0);
+        private final CommandXboxController joystick = new CommandXboxController(0);
 
-    public final CommandSwerveDrivetrain drivetrain   = TunerConstants.createDrivetrain();
-    public final IntakeSubsystem         intake       = new IntakeSubsystem();
-    public final IntakeRollerSubsystem   intakeRoller = new IntakeRollerSubsystem();
-    public final ShooterSubsystem        shooter      = new ShooterSubsystem();
-    public final HopperSubsystem         hopper       = new HopperSubsystem();
-    public final FeederSubsystem         feeder       = new FeederSubsystem();
+        public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
+        public final IntakeSubsystem intake = new IntakeSubsystem();
+        public final IntakeRollerSubsystem intakeRoller = new IntakeRollerSubsystem();
+        public final ShooterSubsystem shooter = new ShooterSubsystem();
+        public final HopperSubsystem hopper = new HopperSubsystem();
+        public final FeederSubsystem feeder = new FeederSubsystem();
 
-    private final SendableChooser<Command> autoChooser;
+        private final SendableChooser<Command> autoChooser;
 
-    private final ContinuousAimCommand continuousAim;
+        private final ContinuousAimCommand continuousAim;
+        private final ShootCommand shootCommand;
 
-    public RobotContainer() {
-        NamedCommands.registerCommand("AutoShoot",
-                new AutoShootCommand(shooter, hopper, feeder, drivetrain));
-        NamedCommands.registerCommand("Extend",
-                new ExtendIntakeCommand(intake));
-        NamedCommands.registerCommand("Retract",
-                new RetractIntakeCommand(intake));
+        public RobotContainer() {
+                NamedCommands.registerCommand("AutoShoot",
+                                new AutoShootCommand(shooter, hopper, feeder, drivetrain));
+                NamedCommands.registerCommand("Extend",
+                                new ExtendIntakeCommand(intake));
+                NamedCommands.registerCommand("Retract",
+                                new RetractIntakeCommand(intake));
 
-        autoChooser = AutoBuilder.buildAutoChooser("Tests");
+                autoChooser = AutoBuilder.buildAutoChooser("Tests");
+                SmartDashboard.putData("AutoMode", autoChooser);
 
-        continuousAim = new ContinuousAimCommand(
-                drivetrain,
-                joystick::getLeftY,
-                joystick::getLeftX,
-                MaxSpeed);
+                continuousAim = new ContinuousAimCommand(
+                                drivetrain,
+                                joystick::getLeftY,
+                                joystick::getLeftX,
+                                MaxSpeed);
 
-        configureBindings();
+                shootCommand = new ShootCommand(shooter, hopper, feeder, drivetrain);
 
-        FollowPathCommand.warmupCommand().schedule();
-    }
+                configureBindings();
 
-    private void configureBindings() {
+                FollowPathCommand.warmupCommand().schedule();
+        }
 
-        drivetrain.setDefaultCommand(
-                drivetrain.applyRequest(() -> drive
-                        .withVelocityX(-joystick.getLeftY() * MaxSpeed)
-                        .withVelocityY(-joystick.getLeftX() * MaxSpeed)
-                        .withRotationalRate(-joystick.getRightX() * MaxAngularRate)));
+        private void configureBindings() {
 
-        // Idle when disabled
-        final var idle = new SwerveRequest.Idle();
-        RobotModeTriggers.disabled().whileTrue(
-                drivetrain.applyRequest(() -> idle).ignoringDisable(true));
+                drivetrain.setDefaultCommand(
+                                drivetrain.applyRequest(() -> drive
+                                                .withVelocityX(-joystick.getLeftY() * MaxSpeed)
+                                                .withVelocityY(-joystick.getLeftX() * MaxSpeed)
+                                                .withRotationalRate(-joystick.getRightX() * MaxAngularRate)));
 
-        joystick.leftTrigger().whileTrue(continuousAim);
-        joystick.rightTrigger().whileTrue(new ShootCommand(shooter, hopper, feeder, drivetrain));
+                // Idle when disabled
+                final var idle = new SwerveRequest.Idle();
+                RobotModeTriggers.disabled().whileTrue(
+                                drivetrain.applyRequest(() -> idle).ignoringDisable(true));
 
-        joystick.x().onTrue(
-                new ExtendIntakeCommand(intake)
-                        .alongWith(Commands.run(intakeRoller::intake, intakeRoller)));
+                joystick.leftTrigger().whileTrue(continuousAim);
+                joystick.rightTrigger().whileTrue(shootCommand);
 
-        joystick.y().onTrue(
-                new RetractIntakeCommand(intake)
-                        .alongWith(Commands.runOnce(intakeRoller::stop, intakeRoller)));
+                joystick.a().onTrue(new ExtendIntakeCommand(intake));
+                joystick.y().onTrue(new RetractIntakeCommand(intake));
 
-        joystick.rightBumper().onTrue(
-                drivetrain.runOnce(drivetrain::seedFieldCentric));
+                joystick.x().onTrue(Commands.runOnce(intakeRoller::intake, intakeRoller));
+                joystick.b().onTrue(Commands.runOnce(intakeRoller::stop, intakeRoller));
 
-        joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
-        joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
-        joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
-        joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
+                joystick.rightBumper().whileTrue(
+                                Commands.startEnd(intakeRoller::eject, intakeRoller::stop, intakeRoller));
 
-        drivetrain.registerTelemetry(logger::telemeterize);
-    }
+                joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
+                joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));
+                joystick.start().and(joystick.y()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kForward));
+                joystick.start().and(joystick.x()).whileTrue(drivetrain.sysIdQuasistatic(Direction.kReverse));
 
-    public Command getAutonomousCommand() {
-        return autoChooser.getSelected();
-    }
+                drivetrain.registerTelemetry(logger::telemeterize);
+        }
+
+        public Command getAutonomousCommand() {
+                return autoChooser.getSelected();
+        }
 }

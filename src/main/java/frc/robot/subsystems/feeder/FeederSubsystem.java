@@ -22,60 +22,55 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
  */
 public class FeederSubsystem extends SubsystemBase {
     private final SparkMax feederMotor;
-    
-    private static final int FEEDER_MOTOR_ID = 36;   
-    
-    private static final double FEED_SPEED = 1;    
-    private static final double SLOW_FEED_SPEED = 0.4; 
-    private static final double REVERSE_SPEED = -0.5;  
-    
-    private double currentSpeed = 0.0;
-    
+
+    private static final int FEEDER_MOTOR_ID = 36;
+
+    private static final double FEED_SPEED = 0.9;
+    private static final double SLOW_FEED_SPEED = 0.4;
+    private static final double REVERSE_SPEED = -0.5;
+
     public FeederSubsystem() {
         feederMotor = new SparkMax(FEEDER_MOTOR_ID, MotorType.kBrushless);
-        
+
         SparkMaxConfig config = new SparkMaxConfig();
         config.idleMode(IdleMode.kCoast);
         config.smartCurrentLimit(30);
-        config.inverted(true); 
-        
+        config.inverted(true);
+
         feederMotor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     }
-    
+
     @Override
     public void periodic() {
-        SmartDashboard.putNumber("Feeder/Speed", currentSpeed);
+        SmartDashboard.putNumber("Feeder/Speed", feederMotor.getAppliedOutput());
         SmartDashboard.putNumber("Feeder/Current (A)", feederMotor.getOutputCurrent());
 
     }
-    
+
     public void feed() {
-        setSpeed(FEED_SPEED);
+        feederMotor.set(FEED_SPEED);
     }
 
     public void slowFeed() {
-        setSpeed(SLOW_FEED_SPEED);
+        feederMotor.set(SLOW_FEED_SPEED);
     }
- 
+
     public void reverse() {
-        setSpeed(REVERSE_SPEED);
+        feederMotor.set(REVERSE_SPEED);
     }
 
     public void stop() {
-        setSpeed(0);
+        feederMotor.set(0);
     }
 
     /**
      * Directly set feeder speed.
+     * 
      * @param speed -1.0 to 1.0
      */
-    public void setSpeed(double speed) {
-        currentSpeed = speed;
-        feederMotor.set(speed);
-    }
 
     public boolean isRunning() {
-        return Math.abs(currentSpeed) > 0.01;
+        return Math.abs(feederMotor.getAppliedOutput()) > 0.01;
     }
 }
