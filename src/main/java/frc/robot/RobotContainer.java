@@ -29,6 +29,7 @@ import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.drivetrain.CommandSwerveDrivetrain;
 import frc.robot.subsystems.feeder.FeederSubsystem;
 import frc.robot.subsystems.hooper.HopperSubsystem;
+import frc.robot.subsystems.intake.ArmSubsystem;
 import frc.robot.subsystems.intake.IntakeRollerSubsystem;
 import frc.robot.subsystems.intake.IntakeSubsystem;
 import frc.robot.subsystems.shooter.ShooterSubsystem;
@@ -48,11 +49,12 @@ public class RobotContainer {
         private final CommandXboxController joystick = new CommandXboxController(0);
 
         public final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
-        public final IntakeSubsystem intake = new IntakeSubsystem();
+        // public final IntakeSubsystem intake = new IntakeSubsystem();
         public final IntakeRollerSubsystem intakeRoller = new IntakeRollerSubsystem();
         public final ShooterSubsystem shooter = new ShooterSubsystem();
         public final HopperSubsystem hopper = new HopperSubsystem();
         public final FeederSubsystem feeder = new FeederSubsystem();
+        private final ArmSubsystem arm = new ArmSubsystem();
 
         private final SendableChooser<Command> autoChooser;
 
@@ -62,10 +64,6 @@ public class RobotContainer {
         public RobotContainer() {
                 NamedCommands.registerCommand("AutoShoot",
                                 new AutoShootCommand(shooter, hopper, feeder, drivetrain));
-                NamedCommands.registerCommand("Extend",
-                                new ExtendIntakeCommand(intake));
-                NamedCommands.registerCommand("Retract",
-                                new RetractIntakeCommand(intake));
 
                 autoChooser = AutoBuilder.buildAutoChooser("Tests");
                 SmartDashboard.putData("AutoMode", autoChooser);
@@ -99,8 +97,8 @@ public class RobotContainer {
                 joystick.leftTrigger().whileTrue(continuousAim);
                 joystick.rightTrigger().whileTrue(shootCommand);
 
-                joystick.a().onTrue(new ExtendIntakeCommand(intake));
-                joystick.y().onTrue(new RetractIntakeCommand(intake));
+                // joystick.a().onTrue(new ExtendIntakeCommand(intake));
+                // joystick.y().onTrue(new RetractIntakeCommand(intake));
 
                 joystick.x().onTrue(Commands.runOnce(intakeRoller::intake, intakeRoller));
                 joystick.b().onTrue(Commands.runOnce(intakeRoller::stop, intakeRoller));
@@ -110,8 +108,19 @@ public class RobotContainer {
 
                 joystick.rightBumper().whileTrue(
                                 Commands.startEnd(hopper::eject, hopper::stop, hopper));
-                joystick.povUp().onTrue(Commands.runOnce(() -> shooter.changeVelocityRPM(500.0), shooter));
-                joystick.povDown().onTrue(Commands.runOnce(() -> shooter.changeVelocityRPM(-500.0), shooter));
+
+                joystick.povUp().whileTrue(
+                                Commands.run(() -> arm.manualDrive(-1), arm));
+
+                // POV Down → extend (direction = +1)
+                joystick.povDown().whileTrue(
+                                Commands.run(() -> arm.manualDrive(+1), arm));
+
+                // ── DEFAULT COMMAND ──
+                // When no POV is pressed, hold position with gravity compensation.
+                arm.setDefaultCommand(
+                                Commands.run(() -> arm.manualDrive(0), arm)
+                                                .withName("Arm Hold"));
 
                 joystick.back().and(joystick.y()).whileTrue(drivetrain.sysIdDynamic(Direction.kForward));
                 joystick.back().and(joystick.x()).whileTrue(drivetrain.sysIdDynamic(Direction.kReverse));

@@ -16,18 +16,21 @@ public class ShootCommand extends Command {
     private static final String LIMELIGHT_NAME = "limelight";
 
     private static final Translation2d BLUE_HUB = new Translation2d(4.552, 4.021);
-    private static final Translation2d RED_HUB  = new Translation2d(11.961, 4.021);
+    private static final Translation2d RED_HUB = new Translation2d(11.961, 4.021);
 
-    private static final double LL_MAX_AMBIGUITY   = 0.2;
-    private static final double LL_MIN_TAG_AREA     = 0.1;
+    private static final double LL_MAX_AMBIGUITY = 0.2;
+    private static final double LL_MIN_TAG_AREA = 0.1;
 
-    private final ShooterSubsystem        shooter;
-    private final HopperSubsystem         hopper;
-    private final FeederSubsystem         feeder;
+    private final ShooterSubsystem shooter;
+    private final HopperSubsystem hopper;
+    private final FeederSubsystem feeder;
     private final CommandSwerveDrivetrain drivetrain;
 
-    private enum Phase { SPINNING_UP, FEEDING }
-    private Phase  phase;
+    private enum Phase {
+        SPINNING_UP, FEEDING
+    }
+
+    private Phase phase;
     private double lastCommandedDistance = -1.0;
 
     public ShootCommand(
@@ -36,9 +39,9 @@ public class ShootCommand extends Command {
             FeederSubsystem feeder,
             CommandSwerveDrivetrain drivetrain) {
 
-        this.shooter    = shooter;
-        this.hopper     = hopper;
-        this.feeder     = feeder;
+        this.shooter = shooter;
+        this.hopper = hopper;
+        this.feeder = feeder;
         this.drivetrain = drivetrain;
 
         addRequirements(shooter, hopper, feeder);
@@ -63,7 +66,6 @@ public class ShootCommand extends Command {
         SmartDashboard.putNumber("ShootCommand/Distance (m)", distance);
         SmartDashboard.putBoolean("ShootCommand/Shooter Ready", shooter.isReadyToShoot());
 
-
         boolean distanceChanged = Math.abs(distance - lastCommandedDistance) > 0.05;
 
         switch (phase) {
@@ -81,18 +83,18 @@ public class ShootCommand extends Command {
 
             case FEEDING:
                 if (distanceChanged) {
+                    shooter.setVelocityForDistance(distance);
                     lastCommandedDistance = distance;
                 }
 
                 hopper.feed();
                 feeder.feed();
 
-                if (!shooter.isReadyToShoot()) {
+                // Only pause if RPM crashes badly (e.g., below 60% of target)
+                if (shooter.getWheelRPM() < shooter.targetWheelRPM * 0.6) {
                     phase = Phase.SPINNING_UP;
                     hopper.stop();
                     feeder.stop();
-                    shooter.setVelocityForDistance(distance);
-                    SmartDashboard.putString("ShootCommand/Phase", phase.toString());
                 }
                 break;
         }
@@ -114,14 +116,15 @@ public class ShootCommand extends Command {
 
     public double getDistanceToHub() {
         if (LimelightHelpers.getTV(LIMELIGHT_NAME)) {
-            LimelightHelpers.RawFiducial[] fiducials =
-                LimelightHelpers.getRawFiducials(LIMELIGHT_NAME);
+            LimelightHelpers.RawFiducial[] fiducials = LimelightHelpers.getRawFiducials(LIMELIGHT_NAME);
 
             if (fiducials != null && fiducials.length > 0) {
                 LimelightHelpers.RawFiducial best = null;
                 for (LimelightHelpers.RawFiducial f : fiducials) {
-                    if (f.ambiguity > LL_MAX_AMBIGUITY) continue;
-                    if (f.ta < LL_MIN_TAG_AREA) continue;
+                    if (f.ambiguity > LL_MAX_AMBIGUITY)
+                        continue;
+                    if (f.ta < LL_MIN_TAG_AREA)
+                        continue;
                     if (best == null || f.ambiguity < best.ambiguity) {
                         best = f;
                     }
