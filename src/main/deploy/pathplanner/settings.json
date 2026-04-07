@@ -3,6 +3,7 @@
   "robotLength": 0.83,
   "holonomicMode": true,
   "pathFolders": [
+    "Regional",
     "Tests"
   ],
   "autoFolders": [],

@@ -15,30 +15,6 @@
           "data": {
             "name": "AutoShoot"
           }
-        },
-        {
-          "type": "named",
-          "data": {
-            "name": "intakeDown"
-          }
-        },
-        {
-          "type": "path",
-          "data": {
-            "pathName": "GoingToIntake"
-          }
-        },
-        {
-          "type": "path",
-          "data": {
-            "pathName": "IntakePose"
-          }
-        },
-        {
-          "type": "path",
-          "data": {
-            "pathName": "Copy of IntakePose"
-          }
         }
       ]
     }
